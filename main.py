@@ -3,13 +3,12 @@ import logging
 import asyncio
 import re
 from aiogram import Bot, Dispatcher, F, types, Router
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, InputMediaPhoto
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, InputMediaPhoto, FSInputFile
 from aiogram.fsm.context import FSMContext
 from keyboards import get_games_keyboard, GAMES_PER_PAGE, get_accounts_keyboard
-from states import SearchStates, SupportStates, PromoStates
 from base import SQL
 from handlers_steam import router as steam_router
-from ai_support import handle_ai_support
+from states import SearchStates, PromoStates
 from handlers_admin import admin_router
 from aiogram.filters import Command
 
@@ -26,7 +25,7 @@ buttons_main = [
     [InlineKeyboardButton(text="🛍️ Каталог", callback_data="category")],
     [InlineKeyboardButton(text="🛒 Моя корзина", callback_data="basket")],
     [InlineKeyboardButton(text="👤 Мой профиль", callback_data="profile")],
-    [InlineKeyboardButton(text="📞🤖 Поддержка (Нейросеть)", callback_data="help_neyro")],
+    [InlineKeyboardButton(text="📞 Поддержка", callback_data="support")], # Изменили текст и callback
 ]
 kb_main = InlineKeyboardMarkup(inline_keyboard=buttons_main)
 
@@ -60,7 +59,6 @@ buttons_after_ai = [
 ]
 kb_after_ai = InlineKeyboardMarkup(inline_keyboard=buttons_after_ai)
 
-
 # --- ФУНКЦИЯ ДЛЯ ПЛАВНОЙ ЗАМЕНЫ СООБЩЕНИЙ ---
 async def safe_edit_text(call: types.CallbackQuery, text: str, reply_markup: InlineKeyboardMarkup):
     """Помогает менять экраны без создания новых сообщений снизу"""
@@ -69,6 +67,25 @@ async def safe_edit_text(call: types.CallbackQuery, text: str, reply_markup: Inl
         await call.message.answer(text, reply_markup=reply_markup, parse_mode="HTML")
     else:
         await call.message.edit_text(text, reply_markup=reply_markup, parse_mode="HTML")
+
+MAIN_MENU_IMAGE_PATH = "Ключи.png"
+
+async def safe_edit_photo(call: types.CallbackQuery, photo_path: str, caption: str, reply_markup: InlineKeyboardMarkup):
+    """Плавно выводит картинку главного меню из локальной папки"""
+    if call.message.photo:
+        try:
+            # Для изменения медиафайла на локальный передаем FSInputFile внутрь InputMediaPhoto
+            await call.message.edit_media(
+                InputMediaPhoto(media=FSInputFile(photo_path), caption=caption, parse_mode="HTML"),
+                reply_markup=reply_markup
+            )
+        except Exception:
+            await call.message.delete()
+            # Если словили ошибку (например, картинка не изменилась), отправляем заново
+            await call.message.answer_photo(photo=FSInputFile(photo_path), caption=caption, reply_markup=reply_markup, parse_mode="HTML")
+    else:
+        await call.message.delete()
+        await call.message.answer_photo(photo=FSInputFile(photo_path), caption=caption, reply_markup=reply_markup, parse_mode="HTML")
 
 
 @main_router.message(Command("cancel"))
@@ -94,13 +111,12 @@ def get_dynamic_kb(items, back_callback):
     kb.inline_keyboard.append([InlineKeyboardButton(text="🔙 Назад", callback_data=back_callback)])
     return kb
 
-
 def get_main_kb(is_admin=False):
     buttons = [
         [InlineKeyboardButton(text="🛍️ Каталог", callback_data="category")],
         [InlineKeyboardButton(text="🛒 Моя корзина", callback_data="basket")],
         [InlineKeyboardButton(text="👤 Мой профиль", callback_data="profile")],
-        [InlineKeyboardButton(text="📞🤖 Поддержка (Нейросеть)", callback_data="help_neyro")],
+        [InlineKeyboardButton(text="📞 Поддержка", callback_data="support")],  # Изменили текст и callback
     ]
     if is_admin:
         buttons.append([InlineKeyboardButton(text="🛠 Админ-панель", callback_data="admin_panel")])
@@ -127,18 +143,24 @@ async def start(message: types.Message, state: FSMContext):
         "• ✅ Гарантия качества на все товары\n"
     )
     # Всем выводится магазин. Но у админа будет дополнительная кнопка внизу!
-    await message.answer(start_text, reply_markup=get_main_kb(is_admin), parse_mode="HTML")
+    await message.answer_photo(
+        photo=FSInputFile(MAIN_MENU_IMAGE_PATH),
+        caption=start_text,
+        reply_markup=get_main_kb(is_admin),
+        parse_mode="HTML"
+    )
 
 
 # --- ОБРАБОТКА ЛОГИКИ ПРОМОКОДА ---
 @main_router.message(PromoStates.waiting_for_promo)
 async def promo_logic(message: types.Message, state: FSMContext):
-    promo_code = message.text
+    # Убираем случайные пробелы и делаем все буквы заглавными
+    promo_code = message.text.strip().upper()
     discount = db.check_promo(promo_code)
 
     if discount:
         await state.update_data(active_discount=discount)
-        text = f"✅ Промокод применен! Скидка: <b>{discount} руб.</b>\nПерейдите в корзину для оплаты."
+        text = f"✅ Промокод <b>{promo_code}</b> применен! Скидка: <b>{discount} руб.</b>\nПерейдите в корзину для оплаты."
     else:
         text = "❌ Такого промокода не существует или он закончился."
 
@@ -182,15 +204,6 @@ async def process_search(message: types.Message, state: FSMContext):
     await state.clear()
 
 
-# --- ОБРАБОТКА НЕЙРОСЕТИ (FSM) ---
-
-@main_router.message(SupportStates.waiting_for_question)
-async def ai_support_logic(message: types.Message, state: FSMContext, bot: Bot):
-    await handle_ai_support(message, state, bot)
-    await message.answer("Если нужна более точная информация, вы можете написать администратору:",
-                         reply_markup=kb_after_ai)
-
-
 # --- ОБРАБОТКА КНОПОК (CALLBACK) ---
 
 @main_router.callback_query()
@@ -217,7 +230,7 @@ async def start_call(call: types.CallbackQuery, state: FSMContext):
             "• 👤 Мой профиль — покупки и баланс\n"
             "• 📞🤖 Поддержка — связаться с нейросетью\n"
         )
-        await safe_edit_text(call, start_text, get_main_kb(is_admin))
+        await safe_edit_photo(call, MAIN_MENU_IMAGE_PATH, caption=start_text, reply_markup=get_main_kb(is_admin))
 
     if call.data == "category":
         await safe_edit_text(call, "🛒 <b>Категории товаров:</b>", kb_category)
@@ -249,14 +262,19 @@ async def start_call(call: types.CallbackQuery, state: FSMContext):
     if call.data == "subscribes":
         await safe_edit_text(call, "🤖 <b>Подписки на Нейросети:</b>", kb_subscribes)
 
-    if call.data == "help_neyro":
-        await state.set_state(SupportStates.waiting_for_question)
-        kb_cancel = InlineKeyboardMarkup(
-            inline_keyboard=[[InlineKeyboardButton(text="🔙 Отмена", callback_data="back_to_main")]])
-        await safe_edit_text(call, "🤖 Я — нейросеть-помощник SharkStore.\nНапишите ваш вопрос текстовым сообщением!",
-                             kb_cancel)
-        await call.answer()
-        return
+    if call.data == "support":
+        text = (
+            "📞 <b>Служба поддержки SharkStore</b>\n\n"
+            "Если у вас возникли проблемы с товаром, оплатой или есть другие вопросы, "
+            "пожалуйста, напишите нашему администратору.\n\n"
+            "<i>Мы стараемся отвечать максимально быстро!</i>"
+        )
+
+        kb_support = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="👨‍💻 Написать администратору", url="tg://user?id=1626312647")],
+            [InlineKeyboardButton(text="🔙 В главное меню", callback_data="back_to_main")]
+        ])
+        await safe_edit_text(call, text, kb_support)
 
     if call.data == "accounts":
         buttons = [

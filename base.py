@@ -42,6 +42,14 @@ class SQL:
             )
         """)
         self.connection.commit()
+        self.cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS promos (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        code TEXT UNIQUE,
+                        discount INTEGER
+                    )
+                """)
+        self.connection.commit()
 
         # --- АВТОМАТИЧЕСКОЕ ОБНОВЛЕНИЕ БАЗЫ ---
         import sqlite3
@@ -83,14 +91,6 @@ class SQL:
             result = self.cursor.execute(query, (id,)).fetchone()
             if result:
                 return result[0]
-
-    def check_promo(self, code):
-        query = "SELECT discount_sum FROM promo WHERE code = ? AND uses > 0"
-        self.cursor.execute(query, (code,))
-        result = self.cursor.fetchone()
-        if result:
-            return result[0]
-        return None
 
     def add_order(self, user_id, item_id):
         query = "INSERT INTO orders (user_id, item_id) VALUES(?, ?)"
@@ -337,6 +337,22 @@ class SQL:
         """Получает список всех товаров для меню редактирования (от новых к старым)"""
         self.cursor.execute("SELECT id, name, price, stock FROM items ORDER BY id DESC")
         return self.cursor.fetchall()
+
+    def add_promo(self, code, discount):
+        """Добавляет новый промокод в базу данных"""
+        self.cursor.execute("INSERT INTO promos (code, discount) VALUES (?, ?)", (code, discount))
+        self.connection.commit()
+
+    def check_promo(self, code):
+        """Проверяет промокод и возвращает скидку (или None)"""
+        # Переводим код в верхний регистр на всякий случай перед поиском
+        clean_code = code.strip().upper()
+        self.cursor.execute("SELECT discount FROM promos WHERE code = ?", (clean_code,))
+        result = self.cursor.fetchone()
+
+        if result:
+            return result[0]  # Возвращаем сумму скидки (например, 100)
+        return None
 
     def close(self):
         self.connection.close()

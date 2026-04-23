@@ -28,6 +28,7 @@ async def open_admin_panel(call: types.CallbackQuery, state: FSMContext):
         [InlineKeyboardButton(text="🎮 Добавить игру (Steam)", callback_data="add")],
         [InlineKeyboardButton(text="📦 Добавить другой товар", callback_data="add_manual")],
         [InlineKeyboardButton(text="✏️ Редактировать товар", callback_data="edit_item_start")],
+        [InlineKeyboardButton(text="🎫 Создать промокод", callback_data="add_promo_start")],  # <-- НОВАЯ КНОПКА
         [InlineKeyboardButton(text="🔙 Вернуться в магазин", callback_data="back_to_main")]
     ])
     await safe_edit_text(call, "🛠 <b>Панель администратора</b>\nВыберите действие:", kb)
@@ -403,4 +404,39 @@ async def manual_service_info(message: types.Message, state: FSMContext):
 
     kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🏠 В панель", callback_data="admin_panel")]])
     await message.answer(f"✅ Услуга успешно создана!", reply_markup=kb)
+    await state.clear()
+
+
+# ==========================================
+# БЛОК 4: СОЗДАНИЕ ПРОМОКОДОВ
+# ==========================================
+@admin_router.callback_query(F.data == "add_promo_start")
+async def add_promo_start(call: types.CallbackQuery, state: FSMContext):
+    await state.set_state(AdminStates.waiting_for_new_promo_name)
+    kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 Отмена", callback_data="admin_panel")]])
+    await safe_edit_text(call,
+                         "🎫 <b>Создание промокода</b>\nВведите секретное слово (например: <code>SHARKFREE</code>):", kb)
+
+
+@admin_router.message(AdminStates.waiting_for_new_promo_name)
+async def promo_name_step(message: types.Message, state: FSMContext):
+    await state.update_data(new_promo_name=message.text.upper())  # Сохраняем в верхнем регистре
+    await message.answer("💰 Введите <b>сумму скидки</b> в рублях (только число):")
+    await state.set_state(AdminStates.waiting_for_new_promo_discount)
+
+
+@admin_router.message(AdminStates.waiting_for_new_promo_discount)
+async def promo_discount_step(message: types.Message, state: FSMContext):
+    if not message.text.isdigit():
+        return await message.answer("❌ Введите число (сумму скидки) без лишних символов!")
+
+    data = await state.get_data()
+    promo_name = data['new_promo_name']
+    discount = int(message.text)
+
+    db.add_promo(promo_name, discount)
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🏠 В панель", callback_data="admin_panel")]])
+    await message.answer(f"✅ <b>Промокод создан!</b>\n\n🎟 Код: <code>{promo_name}</code>\n💸 Скидка: {discount} руб.",
+                         reply_markup=kb, parse_mode="HTML")
     await state.clear()

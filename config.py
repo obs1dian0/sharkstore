@@ -1,2 +1,1 @@
 TOKEN = ""
-GITHUB_TOKEN= ""

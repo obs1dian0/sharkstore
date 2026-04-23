@@ -6,10 +6,6 @@ class SearchStates(StatesGroup):
     waiting_for_developer = State()
 
 
-class SupportStates(StatesGroup):
-    waiting_for_question = State()
-
-
 class PromoStates(StatesGroup):
     waiting_for_promo = State()
 
@@ -39,6 +35,10 @@ class AdminStates(StatesGroup):
     manual_description = State()
     manual_price = State()
     manual_photo = State()
-    manual_keys = State()
     manual_type = State()
     manual_service_info = State()
+    manual_keys = State()
+
+    # --- Для промокодов ---
+    waiting_for_new_promo_name = State()
+    waiting_for_new_promo_discount = State()
