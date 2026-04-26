@@ -1,7 +1,8 @@
 Telegram-бот магазина цифровых товаров "SharkStore"
 Ссылки
-Бот: @Shark2412bot
-Презентация: https://docs.google.com/presentation/d/1LVRVT8ydgMAG9JGE7qGSbkuwc3WnTf0csuOR_iLFI_w/edit?usp=sharing
+
+    Бот: @Shark2412bot
+    Презентация: https://docs.google.com/presentation/d/1LVRVT8ydgMAG9JGE7qGSbkuwc3WnTf0csuOR_iLFI_w/edit?usp=sharing
 
 Описание проекта
 Telegram-бот для автоматизированной продажи цифровых товаров (игры Steam, подписки на нейросети, игровые сервисы PlayStation/Xbox), написанный на Python с использованием библиотеки aiogram 3.
